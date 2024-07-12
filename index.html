@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="myApp">
+<head>
+    <meta charset="UTF-8">
+    <title>Biblioteca Virtual</title>
+    <!-- Enlaces a las hojas de estilo y scripts necesarios -->
+    <link href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js"></script>
+</head>
+<body ng-controller="TableController">
+
+    <!-- Navbar -->
+    <nav>
+        <div class="container mx-auto">
+            <h1>Biblioteca Virtual</h1>
+        </div>
+    </nav>
+
+    <!-- Modal para mostrar detalles del libro -->
+    <div id="myModal" class="modal">
+        <div class="modal-content">
+            <span class="close" ng-click="closeModal()">&times;</span>
+            <h2 class="text-2xl font-bold mb-4">Detalles del Libro</h2>
+            <p><strong>ID:</strong> {{selectedBook.id}}</p>
+            <p><strong>Título:</strong> {{selectedBook.title}}</p>
+            <p><strong>Autores:</strong></p>
+            <ul class="list-disc list-inside">
+                <li ng-repeat="author in selectedBook.authors">
+                    {{author.name}} ({{author.birth_year}} - {{author.death_year}})
+                </li>
+            </ul>
+            <p><strong>Temas:</strong></p>
+            <ul class="list-disc list-inside">
+                <li ng-repeat="subject in selectedBook.subjects">{{subject}}</li>
+            </ul>
+            <p><strong>Imagen:</strong></p>
+            <div ng-if="selectedBook.formats['image/jpeg']">
+                <img ng-src="{{selectedBook.formats['image/jpeg']}}" alt="Book Image" class="max-w-xs rounded-lg">
+            </div>
+            <p><strong>Descargas:</strong> {{selectedBook.download_count}}</p>
+        </div>
+    </div>
+
+    <!-- Tabla para mostrar los libros -->
+    <div class="container mx-auto mt-8">
+        <table id="registro" class="stripe hover w-full text-left">
+            <thead>
+                <tr>
+                    <th class="px-4 py-2">ID</th>
+                    <th class="px-4 py-2">Nombre Autor</th>
+                    <th class="px-4 py-2">Título del Libro</th>
+                    <th class="px-4 py-2">Año de Nacimiento</th>
+                    <th class="px-4 py-2">Año de Defunción</th>
+                    <th class="px-4 py-2">Acciones</th>
+                </tr>
+                <tr>
+                    <th><input type="text" placeholder="Filtrar por ID" class="border border-gray-300 p-1"></th>
+                    <th><input type="text" placeholder="Filtrar por Nombre Autor" class="border border-gray-300 p-1"></th>
+                    <th><input type="text" placeholder="Filtrar por Título" class="border border-gray-300 p-1"></th>
+                    <th>
+                        <input type="text" id="minBirth" placeholder="Año Nacimiento Desde" class="border border-gray-300 p-1 mb-1">
+                        <input type="text" id="maxBirth" placeholder="Año Nacimiento Hasta" class="border border-gray-300 p-1">
+                    </th>
+                    <th>
+                        <input type="text" id="minDeath" placeholder="Año Defunción Desde" class="border border-gray-300 p-1 mb-1">
+                        <input type="text" id="maxDeath" placeholder="Año Defunción Hasta" class="border border-gray-300 p-1">
+                    </th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr ng-repeat="book in books">
+                    <td class="border px-4 py-2">{{book.id}}</td>
+                    <td class="border px-4 py-2" ng-bind-html="getAuthorsNamesHtml(book.authors)"></td>
+                    <td class="border px-4 py-2">{{book.title}}</td>
+                    <td class="border px-4 py-2 birth-year" data-order="{{book.authors[0].birth_year}}" ng-bind-html="getAuthorsBirthYearsHtml(book.authors)"></td>
+                    <td class="border px-4 py-2 death-year" data-order="{{book.authors[0].death_year}}" ng-bind-html="getAuthorsDeathYearsHtml(book.authors)"></td>
+                    <td class="border px-4 py-2">
+                        <div class="flex space-x-2">
+                            <button ng-click="viewDetails(book)" class="bg-blue-500 text-white px-2 py-1 rounded"><i class="fas fa-eye"></i></button>
+                            <button ng-click="download(book)" class="bg-green-500 text-white px-2 py-1 rounded"><i class="fas fa-download"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Script AngularJS -->
+    <script>
+        angular.module('myApp', ['ngSanitize'])
+        .controller('TableController', ['$scope', '$http', function($scope, $http) {
+            $scope.books = [];
+            $scope.selectedBook = {};
+
+            // Llamada a la API para obtener los libros
+            $http.get('https://gutendex.com/books')
+                .then(function(response) {
+                    $scope.books = response.data.results;
+
+                    // Inicializar DataTable después de que los datos se carguen
+                    $(document).ready(function() {
+                        // Añadir filtros de columna
+                        $.fn.dataTable.ext.search.push(
+                            function(settings, data, dataIndex) {
+                                var minBirth = parseInt($('#minBirth').val(), 10);
+                                var maxBirth = parseInt($('#maxBirth').val(), 10);
+                                var birthYear = parseInt(data[3]) || 0; // Usa columna 3 para Año de Nacimiento
+
+                                if ((isNaN(minBirth) && isNaN(maxBirth)) ||
+                                    (isNaN(minBirth) && birthYear <= maxBirth) ||
+                                    (minBirth <= birthYear && isNaN(maxBirth)) ||
+                                    (minBirth <= birthYear && birthYear <= maxBirth)) {
+                                    return true;
+                                }
+                                return false;
+                            },
+                            function(settings, data, dataIndex) {
+                                var minDeath = parseInt($('#minDeath').val(), 10);
+                                var maxDeath = parseInt($('#maxDeath').val(), 10);
+                                var deathYear = parseInt(data[4]) || 0; // Usa columna 4 para Año de Defunción
+
+                                if ((isNaN(minDeath) && isNaN(maxDeath)) ||
+                                    (isNaN(minDeath) && deathYear <= maxDeath) ||
+                                    (minDeath <= deathYear && isNaN(maxDeath)) ||
+                                    (minDeath <= deathYear && deathYear <= maxDeath)) {
+                                    return true;
+                                }
+                                return false;
+                            }
+                        );
+
+                        var table = $('#registro').DataTable({
+                            "columns": [
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                { "orderable": false } // La columna de acciones no se ordena
+                            ]
+                        });
+
+                        // Event listeners para los filtros de columna
+                        $('#minBirth, #maxBirth').keyup(function() {
+                            table.draw();
+                        });
+                        $('#minDeath, #maxDeath').keyup(function() {
+                            table.draw();
+                        });
+
+                        $('#registro thead tr:eq(1) th').each(function(i) {
+                            $('input', this).on('keyup change', function() {
+                                if (i !== 3 && i !== 4) { // Evita los campos de fecha que ya tienen sus propios filtros
+                                    if (table.column(i).search() !== this.value) {
+                                        table
+                                            .column(i)
+                                            .search(this.value)
+                                            .draw();
+                                    }
+                                }
+                            });
+                        });
+                    });
+                })
+                .catch(function(error) {
+                    console.error('Error al obtener los datos de la API:', error);
+                });
+
+            // Función para mostrar los detalles del libro
+            $scope.viewDetails = function(book) {
+                $scope.selectedBook = book;
+                document.getElementById('myModal').style.display = "block";
+            };
+
+            // Función para cerrar el modal
+            $scope.closeModal = function() {
+                document.getElementById('myModal').style.display = "none";
+            };
+
+            // Función para descargar el libro
+            $scope.download = function(book) {
+                const zipUrl = book.formats['application/octet-stream'];
+                if (zipUrl) {
+                    const link = document.createElement('a');
+                    link.href = zipUrl;
+                    link.download = book.title + '.zip';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    alert('Formato .zip no disponible para este libro.');
+                }
+            };
+
+            // Función para obtener los nombres de los autores y mostrarlos en la tabla
+            $scope.getAuthorsNamesHtml = function(authors) {
+                return authors.map(author => author.name).join('<br>');
+            };
+
+            // Función para obtener los años de nacimiento de los autores y mostrarlos en la tabla
+            $scope.getAuthorsBirthYearsHtml = function(authors) {
+                return authors.map(author => author.birth_year).join('<br>');
+            };
+
+            // Función para obtener los años de defunción de los autores y mostrarlos en la tabla
+            $scope.getAuthorsDeathYearsHtml = function(authors) {
+                return authors.map(author => author.death_year).join('<br>');
+            };
+        }]);
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-sanitize/1.8.2/angular-sanitize.min.js"></script>
+</body>
+</html>
